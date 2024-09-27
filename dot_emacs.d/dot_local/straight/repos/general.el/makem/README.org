@@ -1,0 +1,293 @@
+#+TITLE: makem.sh
+
+#+PROPERTY: LOGGING nil
+
+# Note: This readme works with the org-make-toc <https://github.com/alphapapa/org-make-toc> package, which automatically updates the table of contents.
+
+=makem=.sh is a script helps to build, lint, and test Emacs Lisp packages.  It aims to make linting and testing as simple as possible without requiring per-package configuration.
+
+It works similarly to a Makefile in that "rules" are called to perform actions such as byte-compiling, linting, testing, etc.
+
+Source and test files are discovered automatically from the project's Git repo, and package dependencies within them are parsed automatically.
+
+Output is simple: by default, there is no output unless errors occur.  With increasing verbosity levels, more detail gives positive feedback.  Output is colored by default to make reading easy.
+
+The script can run Emacs with the developer's local Emacs configuration, or with a clean, "sandbox" configuration that can be optionally removed afterward.  This is especially helpful when upstream dependencies may have released new versions that differ from those installed in the developer's personal configuration.
+
+* Contents                                                         :noexport:
+:PROPERTIES:
+:TOC:      this
+:END:
+-  [[#installation][Installation]]
+-  [[#usage][Usage]]
+  -  [[#script][Script]]
+  -  [[#makefile][Makefile]]
+  -  [[#github-action][GitHub Action]]
+  -  [[#git-pre-push-hook][git pre-push hook]]
+-  [[#comparisons][Comparisons]]
+-  [[#changelog][Changelog]]
+
+* Screenshots
+:PROPERTIES:
+:TOC:      ignore
+:END:
+
+Some example output.  The first shows running the =test= rule with verbosity level 1, which shows which tests are run but omits each test's output unless it fails:
+
+[[images/make-test-v.png]]
+
+Increasing the verbosity shows green output for passing tests:
+
+[[images/make-test-vv.png]]
+
+The =lint-compile= rule treats byte-compiler warnings as errors:
+
+[[images/make-lint-compile.png]]
+
+The =all= rule runs all rules and treats warnings as errors:
+
+[[images/make-all.png]]
+
+Of course, with increased verbosity, it also shows which rules did not signal errors:
+
+[[images/make-all-v.png]]
+
+The included =test.yml= GitHub Actions file can be used to easily set up CI, giving output like:
+
+[[images/github-action.png]]
+
+* Installation
+:PROPERTIES:
+:TOC:      0
+:END:
+
+Copy =makem.sh= into your package's root directory.  Optionally, also copy =Makefile=, to make calling the script easier.
+
+* Usage
+:PROPERTIES:
+:TOC:      1
+:END:
+
+The =makem.sh= script can be called directly or through a =Makefile=.  Use =makem.sh --help= to list available rules.
+
+** Script
+
+The script may be called directly to specify additional options.
+
+#+BEGIN_EXAMPLE
+  makem.sh [OPTIONS] RULES...
+
+  Linter- and test-specific rules will error when their linters or tests
+  are not found.  With -vv, rules that run multiple rules will show a
+  message for unavailable linters or tests.
+
+  Rules:
+    all      Run all lints and tests.
+    compile  Byte-compile source files.
+
+    lint           Run all linters, ignoring unavailable ones.
+    lint-checkdoc  Run checkdoc.
+    lint-compile   Byte-compile source files with warnings as errors.
+    lint-declare   Run check-declare.
+    lint-indent    Run indent-lint.
+    lint-package   Run package-lint.
+
+    test, tests     Run all tests, ignoring missing test types.
+    test-buttercup  Run Buttercup tests.
+    test-ert        Run ERT tests.
+
+    batch        Run Emacs in batch mode, loading project source and test files
+                 automatically, with remaining args (after "--") passed to Emacs.
+    interactive  Run Emacs interactively, loading project source and test files
+                 automatically.
+
+  Options:
+    -d, --debug    Print debug info.
+    -h, --help     I need somebody!
+    -v, --verbose  Increase verbosity, up to -vv.
+
+    --debug-load-path  Print load-path from inside Emacs.
+
+    -E, --emacs PATH  Run Emacs at PATH.
+
+    -e, --exclude FILE  Exclude FILE from linting and testing.
+    -f, --file FILE     Check FILE in addition to discovered files.
+
+    --no-color        Disable color output.
+    -C, --no-compile  Don't compile files automatically.
+
+  Sandbox options:
+    -s, --sandbox          Run Emacs with an empty config in a temporary
+                           sandbox directory (removing directory on exit).
+    -S, --sandbox-dir DIR  Run Emacs with DIR as persistent sandbox directory.
+                           Makes an Emacs version-specific subdirectory, which
+                           facilitates testing under multiple Emacs versions.
+    --install-deps         Automatically install package dependencies.
+    --install-linters      Automatically install linters.
+    -i, --install PACKAGE  Install PACKAGE before running rules.
+
+  Source files are automatically discovered from git, or may be
+  specified with options.  Package dependencies are discovered from
+  "Package-Requires" headers in source files and from a Cask file.
+#+END_EXAMPLE
+
+** Makefile
+
+A default =Makefile= is provided which calls the =makem.sh= script.  Call it with the name of a rule and an optional verbosity level, like:
+
+#+BEGIN_SRC sh
+  # Run all rules.
+  $ make all
+
+  # Run all lints.
+  $ make lint
+
+  # Run all tests.
+  $ make test
+
+  # Run ERT tests with verbosity level 1.
+  $ make v=v test-ert
+
+  # Run Buttercup tests with verbosity level 2.
+  $ make v=vv test-buttercup
+
+  # Run tests with emacs-sandbox.sh in a temporary sandbox and
+  # automatically install dependencies.
+  $ make sandbox=t install-deps=t test
+
+  # Like previous, but use a permanent sandbox directory.  The developer
+  # might choose to recreate it manually when necessary, leaving it in
+  # place to save time otherwise.
+  $ mkdir sandbox
+  $ make sandbox-dir=sandbox install-deps=t test
+#+END_SRC
+
+** GitHub Action
+
+Using Steve Purcell's [[https://github.com/purcell/setup-emacs][setup-emacs]] Action, it's easy to set up CI on GitHub for an Emacs package.
+
+1.  Put =makem.sh= in your package's repo and make it executable.
+2.  Add =test.yml= to your package's repo at =.github/workflows/test.yml=.  It should work without modification for most Emacs packages.
+
+** git pre-push hook
+
+It's often helpful to run tests automatically before pushing with git.  Here's an example of using =makem.sh= in a =pre-push= hook:
+
+#+BEGIN_SRC sh
+  #!/bin/sh
+
+  # * Commit parameters
+  # Unused now, but good for future reference.  See man 5 githooks.
+
+  remote="$1"
+  url="$2"
+
+  read local_ref local_sha remote_ref remote_sha
+
+  # * Run tests
+
+  # Not using sandbox and auto-install, because "git push" shouldn't
+  # cause remote code to be downloaded and executed (i.e. what would
+  # happen by installing packages).  It can be done manually when
+  # needed.  However, in a CI system running in a container, where
+  # testing in a clean config against the latest available dependency
+  # versions is desired, one could use:
+
+  #   make sandbox=t install-deps=t test
+
+  make test
+#+END_SRC
+
+* Comparisons
+:PROPERTIES:
+:TOC:      ignore-children
+:END:
+
+There are several similar tools, each of which is slightly different.
+
+*Notes:*
++  In these comparisons, =makem.sh='s Makefile is not included, because it only provides an alternative, =make=-style calling convention; it provides no functionality.
++  These notes were compiled by reading these projects' documentation and source code, but the author is not an expert on these tools.  Corrections are welcome.
+
+** [[https://github.com/cask/cask][Cask]]
+
+Cask is a classic Emacs package project management tool.  It's powerful and well-documented.  It's much more sophisticated than =makem.sh=.
+
++  Cask requires configuration and initialization for each project before use.  =makem.sh= is designed to work without initialization or configuration.
++  Cask maintains a project-local Emacs configuration for building and testing.  =makem.sh= provides similar, optional sandboxing to install dependencies separately from the developer's Emacs configuration.
++  Cask is intended to be installed by using =curl= to download a script which is piped to Python.  This is a dangerous, insecure anti-pattern, compounded by the size of the code.  =makem.sh= is intended to be copied into place by the package developer, and its code is easy to inspect.
++  Cask is intended to be installed locally on each developer's machine.  =makem.sh= is intended to be dropped in to a package's repo, requiring no local installation.
++  Cask's documentation is extensive and well-presented on [[https://cask.readthedocs.io/en/latest/][its Web site]].  =makem.sh= can be used by reading a standard =--help= usage guide.
++  Cask is over 3,000 lines of Emacs Lisp and Python code.  =makem.sh= is about 600 lines of very simple code in one file.
+
+** [[https://github.com/doublep/eldev][Eldev]]
+
+Eldev is a powerful, flexible tool.  It has many features and can be extended and configured for each project.  It's designed to be much more sophisticated than =makem.sh=.
+
++  Eldev requires some initialization and configuration for each project before use.  =makem.sh= is designed to work without initialization or configuration.
++  Eldev installs dependencies in an Emacs version-specific directory in the package repo, which allows testing with multiple Emacs versions.  =makem.sh= can either use dependencies that exist in the developer's local Emacs configuration, or it can use built-in sandboxing to install dependencies separately; it does not support separate, Emacs version-specific sandboxes.
++  Eldev is intended to be installed by using =curl= to download a script which is piped to a shell.  This is a dangerous, insecure anti-pattern, compounded by the size of the code.  =makem.sh= is intended to be copied into place by the package developer, and its code is easy to inspect.
++  Eldev is intended to be installed locally on each developer's machine.  =makem.sh= is intended to be dropped in to a package's repo, requiring no local installation.
++  Eldev's documentation is comprehensive and well-written, and it's about 8,000 words.  =makem.sh= can be used by reading a standard =--help= usage guide.
++  Eldev runs from within Emacs, within the same process as the operations being run (such as testing).  =makem.sh= runs outside of Emacs, and each operation is run in a separate Emacs process.
++  Eldev is over 4,000 lines of dense code across 8 source files.  =makem.sh= is about 600 lines of very simple code in one file.
+
+** [[https://github.com/vermiculus/emake.el][emake]]
+
+=emake= is intended for continuous integration testing.  It is powerful and well-documented, and provides some more specific flexibility than =makem.sh=.
+
++  =emake= requires that a variety of project-specific, Emacs-specific variables be configured before use.  =makem.sh= is designed to work without initialization or configuration.
++  It appears that =emake= may be run locally rather than only on remote systems like Travis CI or GitHub Actions, but that extensive configuration and initialization is required.  =makem.sh= is designed to be equally simple to use for both local developer systems and remote CI testing.
++  =emake= provides some tools for building specific Emacs versions when running on CI systems.  =makem.sh= itself uses only the locally installed version of Emacs; for CI use, a GitHub Actions configuration is provided that uses other tools to install specific Emacs versions.
++  =emake= is intended to be installed by using =curl= to download a script which is piped to a shell, and it appears to make further use of downloading remote shell scripts at runtime, at least for initialization.  This is a dangerous, insecure anti-pattern.  =makem.sh= is intended to be copied into place by the package developer, and its code is easy to inspect.  No remote code is downloaded, other than installing Emacs package dependencies when requested.
++  =emake='s documentation is comprehensive and well-written, and it's about 2,000 words.  =makem.sh= can be used by reading a standard =--help= usage guide.
++  =emake= is a 700-line Emacs Lisp file, with an optional 100-line Makefile that provides some default configuration.  =makem.sh= is about 600 lines of Bash code in one file.
+
+** [[https://gitlab.petton.fr/DamienCassou/makel/][makel]]
+
+Of these alternatives, =makel= is most like =makem.sh=.  It's simple and requires little configuration.
+
++  =makel= requires configuring several variables before use.  =makem.sh= is designed to work without initialization or configuration.
++  =makel= can install package dependencies which are manually specified, and it appears to download them into the local package repo directory.  =makem.sh= only installs dependencies into a sandbox directory, which, by default, is a temporary directory that is automatically removed.
++  =makel= can be used on remote CI systems, but no specific integration tools are provided.  =makem.sh= provides a GitHub Actions file that can be used as-is.
++  =makel= is intended to be used by copying two Make files into the project repo directory.  It recommends allowing one of them to download the other automatically from the Internet when not present.  =makem.sh= is intended to be copied into place by the package developer.  No remote code is downloaded, other than installing Emacs package dependencies when requested.
++  =makel= provides no built-in documentation, but it is very simple to use.  =makem.sh= can be used by reading a standard =--help= usage guide.
++  =makel= is about 150 lines of Make code in one file.  =makem.sh= is about 600 lines of Bash code in one file.
+
+* Changelog
+:PROPERTIES:
+:TOC:      0
+:END:
+
+** 0.1-pre
+
+Initial release.
+
+* Credits
+:PROPERTIES:
+:TOC:      ignore
+:END:
+
+Inspired by Damien Cassou's excellent [[https://gitlab.petton.fr/DamienCassou/makel][makel]] project.
+
+* Development
+:PROPERTIES:
+:TOC:      ignore
+:END:
+
+Bug reports, feature requests, suggestions — /oh my/!
+
+* License
+:PROPERTIES:
+:TOC:      ignore
+:END:
+
+GPLv3
+
+# Local Variables:
+# eval: (require 'org-make-toc)
+# before-save-hook: org-make-toc
+# org-export-with-properties: ()
+# org-export-with-title: t
+# End:
+

@@ -1,0 +1,8 @@
+set scrolloff=10
+set showmode
+set showcmd
+set visualbell
+noremap <Leader>y "+y
+noremap <Leader>p "+p
+inoremap jk <Esc>
+

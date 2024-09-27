@@ -1,0 +1,2 @@
+#!/usr/bin/env sh
+/home/mio/.emacs.d/bin/doom --no-color ci hook pre-push "$@"
