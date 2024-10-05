@@ -1,4 +1,0 @@
-(pyim-cangjiedict
- :fetcher github
- :repo "con5tella/pyim-cangjiedict"
- :files (:defaults "*.pyim"))

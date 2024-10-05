@@ -1,4 +1,0 @@
-(pyim-smzmdict
- :fetcher github
- :repo "con5tella/pyim-smzmdict"
- :files (:defaults "*.pyim"))

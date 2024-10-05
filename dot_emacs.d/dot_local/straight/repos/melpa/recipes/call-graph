@@ -1,1 +1,0 @@
-(call-graph :fetcher github :repo "emacsattic/call-graph")

@@ -1,3 +1,0 @@
-(:name better-defaults
-       :type emacsmirror
-       :description "Fixing weird quirks and poor defaults.")

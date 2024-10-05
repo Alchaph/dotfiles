@@ -1,3 +1,0 @@
-(coercion
- :fetcher github
- :repo "liuyinz/coercion.el")
